@@ -1,3 +1,5 @@
+<img src="docs/logo.svg" alt="" width="72" height="72">
+
 # sapphire-turtle/.github
 
 The CI, release and repository setup every sapphire-turtle Rust repository shares: reusable
