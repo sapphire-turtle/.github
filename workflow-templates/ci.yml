@@ -1,0 +1,17 @@
+name: CI
+
+on:
+  pull_request:
+
+jobs:
+  ci:
+    uses: sapphire-turtle/.github/.github/workflows/rust-ci.yml@v1
+    # Everything below is optional; drop what the repository does not need.
+    with:
+      # eframe's windowing needs these to build on Linux.
+      linux-packages: libwayland-dev libxkbcommon-dev
+      # packages: --workspace --exclude <app>-desktop
+      # A rustfmt.toml with nightly-only options:
+      # rustfmt-toolchain: nightly
+      # post-test: |
+      #   ./scripts/ci/some-repository-specific-check.sh

@@ -1,0 +1,6 @@
+{
+  "name": "Release-plz",
+  "description": "Releases with release-plz and builds the CLI and desktop binaries onto the release.",
+  "categories": ["Rust"],
+  "filePatterns": ["^Cargo.toml$"]
+}

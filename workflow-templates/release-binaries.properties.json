@@ -1,0 +1,6 @@
+{
+  "name": "Release binaries",
+  "description": "Builds the CLI or desktop binary for the four release platforms and attaches it to a release.",
+  "categories": ["Rust"],
+  "filePatterns": ["^Cargo.toml$"]
+}

@@ -1,0 +1,47 @@
+name: Release-plz
+
+# For an application whose CLI and desktop app share one version and one
+# `v{version}` tag and GitHub release (templates/release-plz.toml). Replace
+# <app> with the package prefix.
+on:
+  push:
+    branches:
+      - $default-branch
+  workflow_dispatch:
+
+# Keep the release command and the release PR from racing on the same branch.
+concurrency:
+  group: release-plz-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-plz:
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: sapphire-turtle/.github/.github/workflows/release-plz.yml@v1
+    secrets: inherit
+
+  # The CLI makes the tag; the desktop app is in its version group, so it is
+  # released whenever the CLI is.
+  build-cli:
+    needs: release-plz
+    if: contains(fromJSON(needs.release-plz.outputs.packages), '<app>')
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release-binaries.yml
+    with:
+      tag: ${{ fromJSON(needs.release-plz.outputs.tags)['<app>'] }}
+      target: cli
+
+  # A bare desktop binary on the same release, until the desktop app is
+  # packaged with Velopack (sapphire-turtle/corundum-framework#51).
+  build-desktop:
+    needs: release-plz
+    if: contains(fromJSON(needs.release-plz.outputs.packages), '<app>')
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release-binaries.yml
+    with:
+      tag: ${{ fromJSON(needs.release-plz.outputs.tags)['<app>'] }}
+      target: desktop

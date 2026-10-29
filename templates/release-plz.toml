@@ -1,0 +1,52 @@
+# For an application whose CLI (`<app>`) and desktop app (`<app>-desktop`) are
+# released together: one version, one `v{version}` tag and GitHub release, made
+# by the CLI. Replace <app> with the package prefix.
+[workspace]
+changelog_update = true
+dependencies_update = true
+publish = true
+release = true
+git_release_enable = false
+git_tag_enable = false
+# Publish only when a release PR is merged, not on every push to main that
+# carries an unpublished version.
+release_always = false
+pr_branch_prefix = "release-plz/"
+pr_labels = ["release"]
+
+# The CLI, the server and the MCP server: makes the tag and the release.
+[[package]]
+name = "<app>"
+version_group = "<app>"
+git_tag_enable = true
+git_release_enable = true
+git_tag_name = "v{{ version }}"
+git_release_name = "v{{ version }}"
+
+# The libraries other crates depend on keep their own semver, outside the
+# version group: a breaking change in one must not be hidden in a CLI patch, nor
+# a CLI feature force a major on them.
+[[package]]
+name = "<app>-core"
+
+[[package]]
+name = "<app>-mcp"
+
+# The server's own API: its major is the handshake's `app_api`, so it is
+# released only when the API breaks.
+[[package]]
+name = "<app>-api"
+
+# Not on crates.io, so release-plz only versions it in git-only mode (a crate
+# with `publish = false` in its Cargo.toml is otherwise skipped, version group or
+# not). It reads its last version from the CLI's `v{version}` tags and makes no
+# tag of its own; its binaries go onto the CLI's release.
+[[package]]
+name = "<app>-desktop"
+version_group = "<app>"
+git_only = true
+# Overrides the workspace's `publish = true`, which `git_only` refuses.
+publish = false
+git_tag_enable = false
+git_release_enable = false
+git_tag_name = "v{{ version }}"

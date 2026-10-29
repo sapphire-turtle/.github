@@ -1,0 +1,6 @@
+{
+  "name": "cargo-deny",
+  "description": "License, advisory and source checks against the repository's deny.toml, weekly and on manifest changes.",
+  "categories": ["Rust"],
+  "filePatterns": ["^Cargo.toml$"]
+}

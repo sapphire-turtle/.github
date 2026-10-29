@@ -1,0 +1,8 @@
+# The shared workflows' own actions. A bump is a new v1.x.y (README.md#versions).
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "friday"

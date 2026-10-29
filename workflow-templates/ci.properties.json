@@ -1,0 +1,6 @@
+{
+  "name": "Rust CI",
+  "description": "fmt, clippy and the tests on the four release platforms, through sapphire-turtle's shared workflow.",
+  "categories": ["Rust"],
+  "filePatterns": ["^Cargo.toml$"]
+}
