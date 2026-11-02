@@ -20,6 +20,7 @@ Call them as `sapphire-turtle/.github/.github/workflows/<file>@v1`.
 | [`rust-ci.yml`](.github/workflows/rust-ci.yml) | Pull request CI: `fmt`, then clippy and the tests on Linux x86_64 (`test`) and on Linux aarch64, macOS and Windows (`test-platforms`) |
 | [`release-plz.yml`](.github/workflows/release-plz.yml) | release-plz `release` and `release-pr`, with `RELEASE_PLZ_TOKEN`; outputs which packages were released and their tags |
 | [`release-binary.yml`](.github/workflows/release-binary.yml) | Builds one binary for the four release platforms and attaches `<asset>-<os>-<arch>[.exe]` to a release |
+| [`release-velopack.yml`](.github/workflows/release-velopack.yml) | Packs one desktop app as a Velopack package for Linux, macOS (signed and notarized with the repository's secrets) and Windows and attaches its installers and update files to a release; `channel-prefix` lets one release carry several apps |
 | [`cargo-deny.yml`](.github/workflows/cargo-deny.yml) | `cargo deny check` against the repository's `deny.toml` |
 
 Each one's inputs are documented at the top of its file.
@@ -58,7 +59,10 @@ git push origin v1.2.0 && git push -f origin v1
   `cargo binstall`: change it only as a new major of `release-binary.yml`, together with them.
 - **Distribution**: the CLI (headless use) is installed with the install scripts or
   `cargo binstall`; the desktop app ships as a Velopack package
-  (sapphire-turtle/corundum-framework#51). An application's README follows
+  (sapphire-turtle/corundum-framework#51). A repository that releases several desktop apps on one
+  release (sapphire-framework's bridge and sync, asteria's photos and music) gives each a
+  `channel-prefix`; the installers keep the names a one-app repository has
+  (`<pack-id>-win-Setup.exe`, `<pack-id>-osx-Setup.pkg`, `<pack-id>.AppImage`). An application's README follows
   [`templates/README-install.md`](templates/README-install.md).
 - **cargo binstall**: every crate with a released binary carries
   `[package.metadata.binstall]` pointing at the release files, so `cargo binstall` installs

@@ -1,0 +1,410 @@
+name: Release Velopack package
+
+# Packs one desktop app as a Velopack package (sapphire-turtle/corundum-framework#51) for
+# Linux, macOS and Windows and attaches it to an existing GitHub release: an installer per
+# OS, a portable copy, and the files the installed app updates itself from.
+#
+# - Linux: `<pack-id>.AppImage`
+# - macOS: `<pack-id>-osx-Setup.pkg`, `<pack-id>-osx-Portable.zip`
+# - Windows: `<pack-id>-win-Setup.exe`, `<pack-id>-win-Portable.zip`
+# - the update feed, `releases.<channel>.json`, and the package, `<pack-id>-<version>-<channel>-full.nupkg`
+#
+# One release can carry several apps (a repository that releases two, sharing its version):
+# give each a `channel-prefix`. Velopack names the feed after the channel alone, and the
+# installed app reads the feed of the channel it was packed with, so two apps on one release
+# need channels of their own: `<prefix>-linux`, `<prefix>-osx`, `<prefix>-win`. The
+# installers are then renamed back to the names above, without the prefix: the updater reads
+# only the feed and the .nupkg files, which keep vpk's names.
+#
+# The macOS package is signed and notarized when the caller passes the MACOS_CERTIFICATE and
+# APPLE_API_KEY secrets (`secrets: inherit`); without them it is made unsigned. The others
+# are not signed yet.
+#
+# The app's cargo package provides:
+# - the window's binary (`bin`), with what the package needs behind `features`;
+# - on Windows, a console shim (`console-bin`) that is installed as `<command>.exe`, the
+#   command on `Path`, as the window's binary is a GUI-subsystem one;
+# - an example (`icons-example`) that writes `icon.png`, `icon.icns` and `icon.ico` into the
+#   directory it is given.
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Existing release tag to attach the package to (e.g. v0.25.1). The version is the tag without its `v`.'
+        type: string
+        required: true
+      package:
+        description: 'The cargo package of the desktop app.'
+        type: string
+        required: true
+      bin:
+        description: "The window's binary target. Defaults to the package name."
+        type: string
+        default: ''
+      features:
+        description: 'Cargo features to build the package with, comma separated (e.g. velopack).'
+        type: string
+        default: ''
+      console-bin:
+        description: 'The Windows console shim binary target, installed as `<command>.exe`. Empty for none.'
+        type: string
+        default: ''
+      command:
+        description: "The app's command: the executable's name in the Linux and macOS packages (`--mainExe`), and the console shim's on Windows."
+        type: string
+        required: true
+      pack-id:
+        description: "Velopack's package id. Defaults to the package name. On Windows the app is installed in %LocalAppData%\\<pack-id>, which its uninstall deletes, so never the app's data directory's name."
+        type: string
+        default: ''
+      title:
+        description: "The app's name, as the installers and the OS show it."
+        type: string
+        required: true
+      channel-prefix:
+        description: 'Gives the package the channels `<prefix>-linux`, `-osx`, `-win` instead of `linux`, `osx`, `win`, for a release that carries several apps.'
+        type: string
+        default: ''
+      icons-example:
+        description: 'The cargo example (of `package`) that renders the icons into the directory it is given.'
+        type: string
+        required: true
+      linux-categories:
+        description: "The AppImage's desktop entry categories, `;` separated (e.g. Network, Office;Finance)."
+        type: string
+        default: ''
+      macos-bundle-id:
+        description: "The macOS bundle id (e.g. org.sapphire-turtle.sapphire-sync)."
+        type: string
+        required: true
+      macos-universal:
+        description: 'Builds the macOS binary for both aarch64 and x86_64 and packs them as one.'
+        type: boolean
+        default: false
+      linux-packages:
+        description: 'Extra apt packages to install on Linux, space separated. protoc, the Wayland and xkbcommon headers and libfuse2 (for the AppImage smoke test) are always installed.'
+        type: string
+        default: ''
+      pre-pack:
+        description: 'A bash script run after the build and before packing, with the package directory in $PACK_DIR (the executables are already in it) and the OS in $PACK_OS (linux, macos, windows).'
+        type: string
+        default: ''
+      smoke-test:
+        description: 'Runs the AppImage with --version before uploading.'
+        type: boolean
+        default: true
+      vpk-version:
+        description: "The vpk version: the velopack crate's, which corundum-framework-package pins."
+        type: string
+        default: '1.2.161'
+    secrets:
+      MACOS_CERTIFICATE:
+        required: false
+      MACOS_CERTIFICATE_PASSWORD:
+        required: false
+      APPLE_API_KEY:
+        required: false
+      APPLE_API_KEY_ID:
+        required: false
+      APPLE_API_ISSUER_ID:
+        required: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  pack:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The oldest runner, so the AppImage runs on older glibc too.
+          - os: ubuntu-22.04
+            pack-os: linux
+            channel: linux
+            icon: icon.png
+          - os: macos-latest
+            pack-os: macos
+            channel: osx
+            icon: icon.icns
+          - os: windows-latest
+            pack-os: windows
+            channel: win
+            icon: icon.ico
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ inputs.tag }}
+      PACKAGE: ${{ inputs.package }}
+      BIN: ${{ inputs.bin || inputs.package }}
+      FEATURES: ${{ inputs.features }}
+      CONSOLE_BIN: ${{ inputs.console-bin }}
+      COMMAND: ${{ inputs.command }}
+      PACK_ID: ${{ inputs.pack-id || inputs.package }}
+      PACK_OS: ${{ matrix.pack-os }}
+      OS_CHANNEL: ${{ matrix.channel }}
+      CHANNEL: ${{ inputs.channel-prefix && format('{0}-{1}', inputs.channel-prefix, matrix.channel) || matrix.channel }}
+      PACK_DIR: pack
+      VPK_VERSION: ${{ inputs.vpk-version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: The version from the tag
+        run: echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
+
+      # rustup installs the rust-toolchain.toml toolchain on first use.
+      - name: Install the pinned toolchain
+        run: cargo --version
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        env:
+          PACKAGES: ${{ inputs.linux-packages }}
+        run: |
+          sudo apt-get update
+          # Unquoted on purpose: PACKAGES is a list.
+          sudo apt-get install -y protobuf-compiler libwayland-dev libxkbcommon-dev libfuse2 $PACKAGES
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install protobuf
+      - name: Install dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: choco install protoc -y
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ inputs.package }}
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Install vpk
+        run: dotnet tool install -g vpk --version "$VPK_VERSION"
+
+      # Into $PACK_DIR, under the names the package gives them: the command's, apart from
+      # Windows, where the window keeps its cargo name and the console shim has the command's.
+      - name: Build
+        env:
+          UNIVERSAL: ${{ inputs.macos-universal }}
+        run: |
+          features=()
+          if [ -n "$FEATURES" ]; then
+            features=(--features "$FEATURES")
+          fi
+          bins=(--bin "$BIN")
+          if [ "$RUNNER_OS" = Windows ] && [ -n "$CONSOLE_BIN" ]; then
+            bins+=(--bin "$CONSOLE_BIN")
+          fi
+          build() {
+            cargo build --release --locked -p "$PACKAGE" "${bins[@]}" ${features[@]+"${features[@]}"} "$@"
+          }
+          mkdir -p "$PACK_DIR"
+          case $RUNNER_OS in
+            macOS)
+              if [ "$UNIVERSAL" = true ]; then
+                rustup target add x86_64-apple-darwin
+                for target in aarch64-apple-darwin x86_64-apple-darwin; do
+                  build --target "$target"
+                done
+                lipo -create -output "$PACK_DIR/$COMMAND" \
+                  "target/aarch64-apple-darwin/release/$BIN" \
+                  "target/x86_64-apple-darwin/release/$BIN"
+                lipo -info "$PACK_DIR/$COMMAND"
+                # The icons below build for the target already built.
+                echo "ICONS_TARGET=aarch64-apple-darwin" >> "$GITHUB_ENV"
+              else
+                build
+                cp "target/release/$BIN" "$PACK_DIR/$COMMAND"
+              fi
+              echo "MAIN_EXE=$COMMAND" >> "$GITHUB_ENV"
+              ;;
+            Windows)
+              build
+              cp "target/release/$BIN.exe" "$PACK_DIR/$BIN.exe"
+              if [ -n "$CONSOLE_BIN" ]; then
+                cp "target/release/$CONSOLE_BIN.exe" "$PACK_DIR/$COMMAND.exe"
+              fi
+              echo "MAIN_EXE=$BIN.exe" >> "$GITHUB_ENV"
+              ;;
+            *)
+              build
+              cp "target/release/$BIN" "$PACK_DIR/$COMMAND"
+              echo "MAIN_EXE=$COMMAND" >> "$GITHUB_ENV"
+              ;;
+          esac
+
+      - name: Render the icons
+        env:
+          EXAMPLE: ${{ inputs.icons-example }}
+        run: |
+          target=()
+          if [ -n "${ICONS_TARGET:-}" ]; then
+            target=(--target "$ICONS_TARGET")
+          fi
+          cargo run --release --locked -p "$PACKAGE" --example "$EXAMPLE" ${target[@]+"${target[@]}"} -- icons
+
+      - name: Pre-pack
+        if: inputs.pre-pack != ''
+        env:
+          SCRIPT: ${{ inputs.pre-pack }}
+        run: bash -euo pipefail -c "$SCRIPT"
+
+      # A keychain of its own with the Developer ID Application and Installer certificates and
+      # the notary profile, for vpk to sign and notarize the app and its .pkg. Without the
+      # secrets (a fork, say) the package is made unsigned.
+      - name: Set up signing (macOS)
+        if: runner.os == 'macOS'
+        env:
+          # The .p12 of both certificates, base64.
+          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          # An App Store Connect team key: the .p8's text, its key ID and its issuer ID.
+          API_KEY: ${{ secrets.APPLE_API_KEY }}
+          API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+        run: |
+          if [ -z "$CERTIFICATE" ]; then
+            echo "::warning::No MACOS_CERTIFICATE secret: the macOS package is not signed"
+            exit 0
+          fi
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          password=$(openssl rand -base64 24)
+          security create-keychain -p "$password" "$keychain"
+          # Notarizing takes minutes; the keychain must not lock meanwhile.
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          printf '%s' "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" -P "$CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/productsign
+          rm "$RUNNER_TEMP/certificate.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain" > /dev/null
+          # vpk passes --keychain to codesign and notarytool but not to productbuild, which
+          # signs the .pkg and finds its identity only in the search list.
+          # Unquoted on purpose: the list is one keychain per line.
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+
+          printf '%s\n' "$API_KEY" > "$RUNNER_TEMP/api-key.p8"
+          xcrun notarytool store-credentials notary --keychain "$keychain" \
+            --key "$RUNNER_TEMP/api-key.p8" --key-id "$API_KEY_ID" --issuer "$API_ISSUER_ID"
+          rm "$RUNNER_TEMP/api-key.p8"
+
+          # The identities by their kind, so the workflow names no team.
+          identity() {
+            security find-identity -v "$keychain" | sed -n "s/.*\"\($1: .*\)\"$/\1/p" | head -n 1
+          }
+          app=$(identity "Developer ID Application")
+          install=$(identity "Developer ID Installer")
+          if [ -z "$app" ] || [ -z "$install" ]; then
+            echo "MACOS_CERTIFICATE lacks a Developer ID Application or Installer identity"
+            security find-identity -v "$keychain"
+            exit 1
+          fi
+          {
+            echo "SIGN_KEYCHAIN=$keychain"
+            echo "SIGN_APP_IDENTITY=$app"
+            echo "SIGN_INSTALL_IDENTITY=$install"
+          } >> "$GITHUB_ENV"
+
+      - name: Pack
+        env:
+          TITLE: ${{ inputs.title }}
+          ICON: icons/${{ matrix.icon }}
+          CATEGORIES: ${{ inputs.linux-categories }}
+          BUNDLE_ID: ${{ inputs.macos-bundle-id }}
+        run: |
+          extra=()
+          case $RUNNER_OS in
+            Linux)
+              if [ -n "$CATEGORIES" ]; then
+                extra=(--categories "$CATEGORIES")
+              fi
+              ;;
+            macOS)
+              extra=(--bundleId "$BUNDLE_ID")
+              ;;
+          esac
+          # Set by "Set up signing (macOS)"; an array, as the identities have spaces.
+          sign=()
+          if [ -n "${SIGN_APP_IDENTITY:-}" ]; then
+            sign=(
+              --signAppIdentity "$SIGN_APP_IDENTITY"
+              --signInstallIdentity "$SIGN_INSTALL_IDENTITY"
+              --notaryProfile notary
+              --keychain "$SIGN_KEYCHAIN"
+            )
+          fi
+          vpk pack \
+            --packId "$PACK_ID" \
+            --packVersion "$VERSION" \
+            --packDir "$PACK_DIR" \
+            --mainExe "$MAIN_EXE" \
+            --packTitle "$TITLE" \
+            --packAuthors "sapphire-turtle" \
+            --icon "$ICON" \
+            --channel "$CHANNEL" \
+            --delta None \
+            --outputDir releases \
+            ${extra[@]+"${extra[@]}"} \
+            ${sign[@]+"${sign[@]}"}
+          ls -la releases
+
+      - name: Remove the signing keychain (macOS)
+        if: always() && env.SIGN_KEYCHAIN != ''
+        run: security delete-keychain "$SIGN_KEYCHAIN"
+
+      # vpk names the installers after the channel (`<pack-id>-<channel>-Setup.exe`, and
+      # `<pack-id>-<channel>.AppImage` for any channel but `linux`). Without the prefix they
+      # are named as a repository with one app names them. assets.<channel>.json lists what
+      # vpk made, by kind; only the installers and portable copies are renamed.
+      - name: Name the installers without the channel's prefix
+        if: env.CHANNEL != env.OS_CHANNEL
+        run: |
+          assets="releases/assets.$CHANNEL.json"
+          renamed=$(jq --arg id "$PACK_ID" --arg ch "$CHANNEL" --arg os "$OS_CHANNEL" '
+            def esc: gsub("(?<c>[.+*?()\\[\\]{}|^$\\\\])"; "\\\(.c)");
+            map(if .Type == "Installer" or .Type == "Portable" then
+                  .RelativeFileName |= (
+                    sub("^\($id | esc)-\($ch | esc)\\.AppImage$"; "\($id).AppImage")
+                    | sub("^\($id | esc)-\($ch | esc)-"; "\($id)-\($os)-"))
+                else . end)' "$assets")
+          paste <(jq -r '.[].RelativeFileName' "$assets") <(jq -r '.[].RelativeFileName' <<< "$renamed") \
+            | tr -d '\r' \
+            | while IFS=$'\t' read -r old new; do
+                if [ "$old" != "$new" ]; then
+                  mv "releases/$old" "releases/$new"
+                  echo "$old -> $new"
+                fi
+              done
+          printf '%s\n' "$renamed" > "$assets"
+
+      - name: Smoke test the AppImage (Linux)
+        if: runner.os == 'Linux' && inputs.smoke-test
+        run: |
+          appimage="releases/$PACK_ID.AppImage"
+          chmod +x "$appimage"
+          "$appimage" --version
+
+      # Kept with the run too, should the upload below fail.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: velopack-${{ env.PACK_ID }}-${{ env.CHANNEL }}
+          path: releases/
+
+      # What vpk made (assets.<channel>.json) and the feed. Not --clobber: the names carry the
+      # package id and the channel, so a name that is already there means two jobs made the
+      # same file, or two apps share a channel.
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          files=("releases/releases.$CHANNEL.json")
+          while IFS= read -r name; do
+            files+=("releases/$name")
+          done < <(jq -r '.[].RelativeFileName' "releases/assets.$CHANNEL.json" | tr -d '\r')
+          printf '%s\n' "${files[@]}"
+          gh release upload "$TAG" "${files[@]}" --repo "$GITHUB_REPOSITORY"
