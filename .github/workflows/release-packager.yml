@@ -38,6 +38,10 @@ on:
         description: 'The cargo package of the desktop app, with `[package.metadata.packager]`.'
         type: string
         required: true
+      workspace:
+        description: "The directory of the Cargo workspace that has the package, from the repository's root."
+        type: string
+        default: '.'
       app-name:
         description: "The app's name, corundum-framework-package's `PackageSpec::app_name`: the feed is `<app-name>-latest.json`."
         type: string
@@ -118,6 +122,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
+    defaults:
+      run:
+        working-directory: ${{ inputs.workspace }}
     env:
       TAG: ${{ inputs.tag }}
       PACKAGE: ${{ inputs.package }}
@@ -155,6 +162,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ inputs.package }}
+          workspaces: ${{ inputs.workspace }}
 
       - uses: cargo-bins/cargo-binstall@main
       - name: Install cargo-packager
