@@ -42,6 +42,10 @@ on:
         description: "The directory of the Cargo workspace that has the package, from the repository's root."
         type: string
         default: '.'
+      version:
+        description: "The packages' version, when it is not the cargo package's (a demo released under tags of its own). Defaults to the package's."
+        type: string
+        default: ''
       app-name:
         description: "The app's name, corundum-framework-package's `PackageSpec::app_name`: the feed is `<app-name>-latest.json`."
         type: string
@@ -166,15 +170,14 @@ jobs:
 
       - uses: cargo-bins/cargo-binstall@main
       - name: Install cargo-packager
-        env:
-          VERSION: ${{ inputs.packager-version }}
-        run: cargo binstall -y "cargo-packager@$VERSION"
+        run: cargo binstall -y "cargo-packager@${{ inputs.packager-version }}"
 
       # The package's metadata, and where corundum-framework-package (the NSIS template) and
       # the build output are.
       - name: Read the package
         env:
           UPLOAD: ${{ inputs.upload }}
+          VERSION_OVERRIDE: ${{ inputs.version }}
         run: |
           if [ -z "$CARGO_PACKAGER_SIGN_PRIVATE_KEY" ]; then
             if [ "$UPLOAD" = true ]; then
@@ -198,7 +201,8 @@ jobs:
           dir='sub("[\\\\/][^\\\\/]*$"; "")'
           {
             echo "CRATE_DIR=$(jq -r --arg p "$PACKAGE" ".packages[] | select(.name == \$p) | .manifest_path | $dir" "$RUNNER_TEMP/metadata.json")"
-            echo "VERSION=$(jq -r --arg p "$PACKAGE" '.packages[] | select(.name == $p) | .version' "$RUNNER_TEMP/metadata.json")"
+            version=$(jq -r --arg p "$PACKAGE" '.packages[] | select(.name == $p) | .version' "$RUNNER_TEMP/metadata.json")
+            echo "PACKAGE_VERSION=${VERSION_OVERRIDE:-$version}"
             echo "TARGET_DIR=$(jq -r '.target_directory' "$RUNNER_TEMP/metadata.json")"
             echo "BIN=$(jq -r '[.binaries[] | select(.main)][0].path' "$RUNNER_TEMP/packager.json")"
             echo "TEMPLATE=$(jq -r ".packages[] | select(.name == \"corundum-framework-package\") | .manifest_path | $dir + \"/nsis/installer.nsi\"" "$RUNNER_TEMP/metadata.json")"
@@ -300,7 +304,7 @@ jobs:
             fi
           fi
           config=$(jq -c \
-            --arg name "$PACKAGE" --arg version "$VERSION" --arg out "$BIN_DIR" \
+            --arg name "$PACKAGE" --arg version "$PACKAGE_VERSION" --arg out "$BIN_DIR" \
             --argjson shim "$shim" --argjson template "$template" \
             --arg sign "${SIGN_MACOS:-}" '
             . + {name: $name, version: $version, outDir: $out, beforePackagingCommand: null}
@@ -318,7 +322,7 @@ jobs:
         run: |
           out="$RUNNER_TEMP/out"
           mkdir -p "$out"
-          base="${PACKAGE}_${VERSION}_${ARCH}"
+          base="${PACKAGE}_${PACKAGE_VERSION}_${ARCH}"
           url="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG"
           entry() {
             # entry <platform> <file> <format>
@@ -351,7 +355,7 @@ jobs:
               entry windows-x86_64 "${base}-setup.exe" nsis > "$out/feed-part.json"
               ;;
           esac
-          echo "$VERSION" > "$out/version"
+          echo "$PACKAGE_VERSION" > "$out/version"
           ls -la "$out"
           cat "$out/feed-part.json"
           echo "OUT=$out" >> "$GITHUB_ENV"
