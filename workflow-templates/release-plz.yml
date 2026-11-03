@@ -35,7 +35,7 @@ jobs:
       target: cli
 
   # A bare desktop binary on the same release, until the desktop app is
-  # packaged with Velopack (sapphire-turtle/corundum-framework#51).
+  # packaged with cargo-packager (release-packager.yml, sapphire-turtle/corundum-framework#103).
   build-desktop:
     needs: release-plz
     if: contains(fromJSON(needs.release-plz.outputs.packages), '<app>')

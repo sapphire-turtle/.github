@@ -1,7 +1,7 @@
 <!--
 アプリの README.ja.md のインストールの節。<app> を短い名前（journal）に置き換え、
 このコメントは消す。英語版は README-install.md。
-「デスクトップ版」の節は Velopack のパッケージ（sapphire-turtle/corundum-framework#51）が前提。
+「デスクトップ版」の節は cargo-packager のパッケージ（sapphire-turtle/corundum-framework#103）が前提。
 それを出すまでは、デスクトップ版のバイナリを案内する。
 -->
 ## インストール
