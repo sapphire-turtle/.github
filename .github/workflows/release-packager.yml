@@ -126,8 +126,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
+    # Job defaults replace the workflow's: the shell again.
     defaults:
       run:
+        shell: bash
         working-directory: ${{ inputs.workspace }}
     env:
       TAG: ${{ inputs.tag }}
