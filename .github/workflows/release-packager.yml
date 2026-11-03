@@ -1,0 +1,420 @@
+name: Release package
+
+# Packages one desktop app with cargo-packager for Linux, macOS and Windows, signs every
+# package with minisign, and attaches the packages and the app's update feed to an existing
+# GitHub release (sapphire-turtle/corundum-framework#103):
+#
+# - Linux: `<package>_<version>_x86_64.AppImage`
+# - macOS: `<package>_<version>_<arch>.dmg` to install, and `<package>_<version>_<arch>.app.tar.gz`
+#   for updates; the `.app` is signed and notarized when the caller passes the Apple secrets
+# - Windows: `<package>_<version>_x64-setup.exe`, an NSIS installer for the current user
+# - each with its minisign signature, `<file>.sig`
+# - the feed, `<app-name>-latest.json`: the version, and per platform the package's URL,
+#   signature and format, as cargo-packager-updater (corundum-framework-package) reads it
+#
+# The feed is named after the app, so one release can carry several apps.
+#
+# The app's cargo package carries its packaging in `[package.metadata.packager]`: the product
+# name, the identifier, the icons, the main binary. This workflow builds the package itself
+# and adds, per OS: on Windows the console shim (`console-bin`, installed as
+# `<command>.exe`) and corundum-framework-package's NSIS template, with the install hooks; on
+# macOS the signing identity.
+#
+# Secrets (`secrets: inherit`): PACKAGER_SIGN_PRIVATE_KEY and
+# PACKAGER_SIGN_PRIVATE_KEY_PASSWORD (`cargo packager signer generate`), required; the
+# public key is built into the app (corundum-framework-package's
+# `PackageSpec::update_pubkey`). For macOS: MACOS_CERTIFICATE (a .p12 of the Developer ID
+# Application certificate, base64), MACOS_CERTIFICATE_PASSWORD, and an App Store Connect key
+# for notarizing: APPLE_API_KEY (the .p8's text), APPLE_API_KEY_ID, APPLE_API_ISSUER_ID.
+# Without them the `.app` is not signed.
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Existing release tag to attach the packages to (e.g. v0.25.1).'
+        type: string
+        required: true
+      package:
+        description: 'The cargo package of the desktop app, with `[package.metadata.packager]`.'
+        type: string
+        required: true
+      app-name:
+        description: "The app's name, corundum-framework-package's `PackageSpec::app_name`: the feed is `<app-name>-latest.json`."
+        type: string
+        required: true
+      features:
+        description: 'Cargo features to build the package with, comma separated.'
+        type: string
+        default: ''
+      console-bin:
+        description: 'The Windows console shim binary target, installed as `<command>.exe` beside the GUI executable. Empty for none.'
+        type: string
+        default: ''
+      command:
+        description: "The console shim's name on Windows: the app's command."
+        type: string
+        default: ''
+      linux-packages:
+        description: 'Extra apt packages to install on Linux, space separated. protoc, the Wayland and xkbcommon headers and libfuse2 are always installed.'
+        type: string
+        default: ''
+      macos-universal:
+        description: 'Builds the macOS binary for both aarch64 and x86_64 and packages them as one.'
+        type: boolean
+        default: false
+      pre-package:
+        description: "A bash script run after the build and before packaging, with the built binaries' directory in $BIN_DIR and the OS in $PACKAGE_OS (linux, macos, windows)."
+        type: string
+        default: ''
+      smoke-test:
+        description: 'Runs the AppImage with --version before uploading.'
+        type: boolean
+        default: true
+      upload:
+        description: 'Uploads the packages and the feed to the release. Off for a dry run.'
+        type: boolean
+        default: true
+      packager-version:
+        description: "The cargo-packager version: in step with corundum-framework-package's NSIS template and cargo-packager-updater."
+        type: string
+        default: '0.11.8'
+    secrets:
+      # Required for an upload; a dry run without them signs with a key of its own.
+      PACKAGER_SIGN_PRIVATE_KEY:
+        required: false
+      PACKAGER_SIGN_PRIVATE_KEY_PASSWORD:
+        required: false
+      MACOS_CERTIFICATE:
+        required: false
+      MACOS_CERTIFICATE_PASSWORD:
+        required: false
+      APPLE_API_KEY:
+        required: false
+      APPLE_API_KEY_ID:
+        required: false
+      APPLE_API_ISSUER_ID:
+        required: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The oldest runner, so the AppImage runs on older glibc too.
+          - os: ubuntu-22.04
+            package-os: linux
+            formats: appimage
+          - os: macos-latest
+            package-os: macos
+            formats: app,dmg
+          - os: windows-latest
+            package-os: windows
+            formats: nsis
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ inputs.tag }}
+      PACKAGE: ${{ inputs.package }}
+      FEATURES: ${{ inputs.features }}
+      CONSOLE_BIN: ${{ inputs.console-bin }}
+      COMMAND: ${{ inputs.command }}
+      PACKAGE_OS: ${{ matrix.package-os }}
+      FORMATS: ${{ matrix.formats }}
+      CARGO_PACKAGER_SIGN_PRIVATE_KEY: ${{ secrets.PACKAGER_SIGN_PRIVATE_KEY }}
+      CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD: ${{ secrets.PACKAGER_SIGN_PRIVATE_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+
+      # rustup installs the rust-toolchain.toml toolchain on first use.
+      - name: Install the pinned toolchain
+        run: cargo --version
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        env:
+          PACKAGES: ${{ inputs.linux-packages }}
+        run: |
+          sudo apt-get update
+          # Unquoted on purpose: PACKAGES is a list.
+          sudo apt-get install -y protobuf-compiler libwayland-dev libxkbcommon-dev libfuse2 $PACKAGES
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install protobuf
+      - name: Install dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: choco install protoc -y
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ inputs.package }}
+
+      - uses: cargo-bins/cargo-binstall@main
+      - name: Install cargo-packager
+        env:
+          VERSION: ${{ inputs.packager-version }}
+        run: cargo binstall -y "cargo-packager@$VERSION"
+
+      # The package's metadata, and where corundum-framework-package (the NSIS template) and
+      # the build output are.
+      - name: Read the package
+        env:
+          UPLOAD: ${{ inputs.upload }}
+        run: |
+          if [ -z "$CARGO_PACKAGER_SIGN_PRIVATE_KEY" ]; then
+            if [ "$UPLOAD" = true ]; then
+              echo "::error::No PACKAGER_SIGN_PRIVATE_KEY secret: the packages must be signed"
+              exit 1
+            fi
+            echo "::warning::No PACKAGER_SIGN_PRIVATE_KEY secret: the dry run signs with a key of its own"
+            cargo packager signer generate --ci --password dry-run --path "$RUNNER_TEMP/dry-run.key" -f
+            {
+              echo "CARGO_PACKAGER_SIGN_PRIVATE_KEY=$(cat "$RUNNER_TEMP/dry-run.key")"
+              echo "CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD=dry-run"
+            } >> "$GITHUB_ENV"
+          fi
+          cargo metadata --format-version 1 --locked > "$RUNNER_TEMP/metadata.json"
+          jq -e --arg p "$PACKAGE" '.packages[] | select(.name == $p) | .metadata.packager' \
+            "$RUNNER_TEMP/metadata.json" > "$RUNNER_TEMP/packager.json" || {
+            echo "::error::$PACKAGE has no [package.metadata.packager]"
+            exit 1
+          }
+          # A manifest's directory, with either separator.
+          dir='sub("[\\\\/][^\\\\/]*$"; "")'
+          {
+            echo "CRATE_DIR=$(jq -r --arg p "$PACKAGE" ".packages[] | select(.name == \$p) | .manifest_path | $dir" "$RUNNER_TEMP/metadata.json")"
+            echo "VERSION=$(jq -r --arg p "$PACKAGE" '.packages[] | select(.name == $p) | .version' "$RUNNER_TEMP/metadata.json")"
+            echo "TARGET_DIR=$(jq -r '.target_directory' "$RUNNER_TEMP/metadata.json")"
+            echo "BIN=$(jq -r '[.binaries[] | select(.main)][0].path' "$RUNNER_TEMP/packager.json")"
+            echo "TEMPLATE=$(jq -r ".packages[] | select(.name == \"corundum-framework-package\") | .manifest_path | $dir + \"/nsis/installer.nsi\"" "$RUNNER_TEMP/metadata.json")"
+          } >> "$GITHUB_ENV"
+
+      - name: Build
+        env:
+          UNIVERSAL: ${{ inputs.macos-universal }}
+        run: |
+          features=()
+          if [ -n "$FEATURES" ]; then
+            features=(--features "$FEATURES")
+          fi
+          bins=(--bin "$BIN")
+          if [ "$RUNNER_OS" = Windows ] && [ -n "$CONSOLE_BIN" ]; then
+            bins+=(--bin "$CONSOLE_BIN")
+          fi
+          build() {
+            cargo build --release --locked -p "$PACKAGE" "${bins[@]}" ${features[@]+"${features[@]}"} "$@"
+          }
+          if [ "$RUNNER_OS" = macOS ] && [ "$UNIVERSAL" = true ]; then
+            rustup target add x86_64-apple-darwin
+            for target in aarch64-apple-darwin x86_64-apple-darwin; do
+              build --target "$target"
+            done
+            mkdir -p "$TARGET_DIR/release"
+            lipo -create -output "$TARGET_DIR/release/$BIN" \
+              "$TARGET_DIR/aarch64-apple-darwin/release/$BIN" \
+              "$TARGET_DIR/x86_64-apple-darwin/release/$BIN"
+            lipo -info "$TARGET_DIR/release/$BIN"
+            echo "ARCH=universal" >> "$GITHUB_ENV"
+          else
+            build
+            case $RUNNER_OS in
+              macOS) echo "ARCH=aarch64" >> "$GITHUB_ENV" ;;
+              Windows) echo "ARCH=x64" >> "$GITHUB_ENV" ;;
+              *) echo "ARCH=x86_64" >> "$GITHUB_ENV" ;;
+            esac
+          fi
+          # The shim under the command's name, beside the GUI executable.
+          if [ "$RUNNER_OS" = Windows ] && [ -n "$CONSOLE_BIN" ]; then
+            cp "$TARGET_DIR/release/$CONSOLE_BIN.exe" "$TARGET_DIR/release/$COMMAND.exe"
+          fi
+          echo "BIN_DIR=$TARGET_DIR/release" >> "$GITHUB_ENV"
+
+      - name: Pre-package
+        if: inputs.pre-package != ''
+        env:
+          SCRIPT: ${{ inputs.pre-package }}
+        run: bash -euo pipefail -c "$SCRIPT"
+
+      # cargo-packager imports the .p12 into a keychain of its own (APPLE_CERTIFICATE) and
+      # notarizes with an App Store Connect key, whose ID it calls APPLE_API_KEY and whose
+      # .p8 it reads from APPLE_API_KEY_PATH.
+      - name: Apple credentials (macOS)
+        if: runner.os == 'macOS'
+        env:
+          CERT: ${{ secrets.MACOS_CERTIFICATE }}
+          CERT_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          P8: ${{ secrets.APPLE_API_KEY }}
+          KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
+        run: |
+          if [ -z "$CERT" ]; then
+            echo "::warning::No MACOS_CERTIFICATE secret: the macOS package is not signed"
+            exit 0
+          fi
+          {
+            echo "APPLE_CERTIFICATE=$CERT"
+            echo "APPLE_CERTIFICATE_PASSWORD=$CERT_PASSWORD"
+            echo "SIGN_MACOS=1"
+          } >> "$GITHUB_ENV"
+          if [ -n "$P8" ]; then
+            printf '%s\n' "$P8" > "$RUNNER_TEMP/api-key.p8"
+            {
+              echo "APPLE_API_KEY=$KEY_ID"
+              echo "APPLE_API_ISSUER=$ISSUER"
+              echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/api-key.p8"
+            } >> "$GITHUB_ENV"
+          else
+            echo "::warning::No APPLE_API_KEY secret: the macOS package is not notarized"
+          fi
+
+      # The app's [package.metadata.packager], with what this run adds: the package's name
+      # and version, the build output, no build of its own, and per OS the shim, the NSIS
+      # template and the signing identity.
+      - name: Package
+        run: |
+          shim=null
+          if [ "$RUNNER_OS" = Windows ] && [ -n "$CONSOLE_BIN" ]; then
+            shim=$(jq -cn --arg c "$COMMAND" '{path: $c, main: false}')
+          fi
+          template=null
+          if [ "$RUNNER_OS" = Windows ]; then
+            if [ -f "$TEMPLATE" ]; then
+              template=$(jq -cn --arg t "$(cygpath -w "$TEMPLATE" 2> /dev/null || echo "$TEMPLATE")" '$t')
+            else
+              echo "::warning::No corundum-framework-package NSIS template: the installer runs no install hooks"
+            fi
+          fi
+          config=$(jq -c \
+            --arg name "$PACKAGE" --arg version "$VERSION" --arg out "$BIN_DIR" \
+            --argjson shim "$shim" --argjson template "$template" \
+            --arg sign "${SIGN_MACOS:-}" '
+            . + {name: $name, version: $version, outDir: $out, beforePackagingCommand: null}
+            | if $shim != null then .binaries += [$shim] else . end
+            | if $template != null then .nsis = ((.nsis // {}) + {template: $template}) else . end
+            | if $sign != "" then .macos = ((.macos // {}) + {signingIdentity: "Developer ID Application"}) else . end
+            ' "$RUNNER_TEMP/packager.json")
+          echo "$config" | jq .
+          cd "$CRATE_DIR"
+          cargo packager -c "$config" -f "$FORMATS" -v
+
+      # Under names without spaces (GitHub turns them into dots), and the feed's part for
+      # this OS.
+      - name: Collect
+        run: |
+          out="$RUNNER_TEMP/out"
+          mkdir -p "$out"
+          base="${PACKAGE}_${VERSION}_${ARCH}"
+          url="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG"
+          entry() {
+            # entry <platform> <file> <format>
+            jq -cn --arg p "$1" --arg u "$url/$2" --arg s "$(cat "$out/$2.sig")" --arg f "$3" \
+              '{($p): {url: $u, signature: $s, format: $f}}'
+          }
+          move() {
+            mv "$1" "$out/$2"
+            mv "$1.sig" "$out/$2.sig"
+          }
+          cd "$BIN_DIR"
+          ls -la
+          case $RUNNER_OS in
+            Linux)
+              move "$(ls ./*.AppImage | head -n 1)" "$base.AppImage"
+              entry linux-x86_64 "$base.AppImage" appimage > "$out/feed-part.json"
+              ;;
+            macOS)
+              move "$(ls ./*.app.tar.gz | head -n 1)" "$base.app.tar.gz"
+              move "$(ls ./*.dmg | head -n 1)" "$base.dmg"
+              if [ "$ARCH" = universal ]; then
+                jq -s 'add' <(entry macos-aarch64 "$base.app.tar.gz" app) \
+                  <(entry macos-x86_64 "$base.app.tar.gz" app) > "$out/feed-part.json"
+              else
+                entry macos-aarch64 "$base.app.tar.gz" app > "$out/feed-part.json"
+              fi
+              ;;
+            Windows)
+              move "$(ls ./*-setup.exe | head -n 1)" "${base}-setup.exe"
+              entry windows-x86_64 "${base}-setup.exe" nsis > "$out/feed-part.json"
+              ;;
+          esac
+          echo "$VERSION" > "$out/version"
+          ls -la "$out"
+          cat "$out/feed-part.json"
+          echo "OUT=$out" >> "$GITHUB_ENV"
+
+      - name: Smoke test the AppImage (Linux)
+        if: runner.os == 'Linux' && inputs.smoke-test
+        run: |
+          appimage=$(ls "$OUT"/*.AppImage)
+          chmod +x "$appimage"
+          "$appimage" --version
+
+      # Kept with the run too, should the upload below fail; the feed job reads the parts.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: packager-${{ inputs.app-name }}-${{ matrix.package-os }}
+          path: ${{ env.OUT }}
+
+      # Not --clobber: the names carry the package and the version, so a name that is already
+      # there means two jobs made the same file.
+      - name: Upload to the release
+        if: inputs.upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          files=()
+          for f in "$OUT"/*; do
+            case $f in *feed-part.json | */version) ;; *) files+=("$f") ;; esac
+          done
+          gh release upload "$TAG" "${files[@]}" --repo "$GITHUB_REPOSITORY"
+
+  # The feed, once every OS's package is on the release: an app updates only to a version
+  # whose packages are all there. An OS whose job failed is left out of it.
+  feed:
+    needs: package
+    if: always() && !cancelled()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ inputs.tag }}
+      APP_NAME: ${{ inputs.app-name }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: packager-${{ inputs.app-name }}-*
+          path: parts
+
+      - name: Write the feed
+        run: |
+          version=$(cat parts/*/version | sort -u)
+          if [ "$(printf '%s\n' "$version" | wc -l)" != 1 ]; then
+            echo "::error::the packages disagree on the version: $version"
+            exit 1
+          fi
+          feed="$APP_NAME-latest.json"
+          jq -s --arg v "$version" --arg d "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{version: $v, pub_date: $d, platforms: add}' parts/*/feed-part.json > "$feed"
+          cat "$feed"
+          if [ "$(jq '.platforms | length' "$feed")" = 0 ]; then
+            echo "::error::no package was made"
+            exit 1
+          fi
+          echo "FEED=$feed" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: packager-${{ inputs.app-name }}-feed
+          path: ${{ env.FEED }}
+
+      - name: Upload the feed to the release
+        if: inputs.upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" "$FEED" --repo "$GITHUB_REPOSITORY"
