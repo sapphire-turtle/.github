@@ -1,7 +1,7 @@
 <!--
 The installation section of an application's README. Replace <app> with the
 short name (journal) and drop this comment. README-install.ja.md is the Japanese one. The "Desktop app" section
-describes the Velopack package (sapphire-turtle/corundum-framework#51): until an
+describes the cargo-packager package (sapphire-turtle/corundum-framework#103): until an
 application ships one, keep pointing at its bare desktop binary instead.
 -->
 ## Installation
