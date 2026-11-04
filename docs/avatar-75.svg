@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <rect width="24" height="24" fill="#EEF1F5"/>
+  <g transform="translate(3 3) scale(0.75)" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <mask id="glyph">
+    <rect width="24" height="24" fill="#000"/>
+    <g transform="translate(0 -0.2)">
+      <g fill="#fff" stroke="#fff" stroke-width="1">
+        <path d="M15 9.2C18.5 6.6 22.4 7.6 22.7 14.6 21.2 12.6 19 11.6 16 12Z" transform="translate(16.53 10.19) rotate(-45) scale(0.85) translate(-16 -10.5)"/>
+        <path d="M15 9.2C18.5 6.6 22.4 7.6 22.7 14.6 21.2 12.6 19 11.6 16 12Z" transform="matrix(-1 0 0 1 24 0) translate(16.53 10.19) rotate(-45) scale(0.85) translate(-16 -10.5)"/>
+        <path d="M15.5 15.8C17.8 15.8 19.6 17.6 19.6 20.6 17.8 19.8 16.2 18.8 14.8 17.6Z" transform="translate(15.97 16.99) scale(0.8) translate(-15.5 -16.5)"/>
+        <path d="M15.5 15.8C17.8 15.8 19.6 17.6 19.6 20.6 17.8 19.8 16.2 18.8 14.8 17.6Z" transform="matrix(-1 0 0 1 24 0) translate(15.97 16.99) scale(0.8) translate(-15.5 -16.5)"/>
+        <path d="M10.4 4.3a1.6 2 0 1 0 3.2 0a1.6 2 0 1 0-3.2 0Z" transform="translate(12 5.55) scale(0.9) translate(-12 -6.4)"/>
+        <path d="M11.3 20.35 12 22.45l.7-2.1Z"/>
+      </g>
+      <g transform="translate(12 12.8) scale(0.709) translate(-12 -12)">
+        <path d="M12 2 20.66 7v10L12 22l-8.66-5V7Z" fill="#000" stroke="#000" stroke-width="5.39"/>
+        <path d="M12 2 20.66 7v10L12 22l-8.66-5V7Z" fill="#fff" stroke="#fff"/>
+        <path d="M12 5.5C12 11.03 12.84 11.51 17.63 8.75C12.84 11.51 12.84 12.49 17.63 15.25C12.84 12.49 12 12.97 12 18.5C12 12.97 11.16 12.49 6.37 15.25C11.16 12.49 11.16 11.51 6.37 8.75C11.16 11.51 12 11.03 12 5.5Z" fill="#000" stroke="#000" stroke-width="1"/>
+      </g>
+    </g>
+  </mask>
+  <defs>
+    <linearGradient id="shade" x1="0" y1="0" x2="0" y2="24" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff" stop-opacity=".22"/>
+      <stop offset="1" stop-color="#000" stop-opacity=".22"/>
+    </linearGradient>
+  </defs>
+  <g mask="url(#glyph)">
+    <path d="M12 12 12.00 -8.00 29.32 2.00Z" fill="#7197E0" stroke="#7197E0" stroke-width=".12"/>
+    <path d="M12 12 29.32 2.00 29.32 22.00Z" fill="#92B0E7" stroke="#92B0E7" stroke-width=".12"/>
+    <path d="M12 12 29.32 22.00 12.00 32.00Z" fill="#4F7FD9" stroke="#4F7FD9" stroke-width=".12"/>
+    <path d="M12 12 12.00 32.00 -5.32 22.00Z" fill="#2D67D2" stroke="#2D67D2" stroke-width=".12"/>
+    <path d="M12 12 -5.32 22.00 -5.32 2.00Z" fill="#2656B0" stroke="#2656B0" stroke-width=".12"/>
+    <path d="M12 12 -5.32 2.00 12.00 -8.00Z" fill="#2D67D2" stroke="#2D67D2" stroke-width=".12"/>
+    <rect width="24" height="24" fill="url(#shade)"/>
+  </g>
+
+  </g>
+</svg>
