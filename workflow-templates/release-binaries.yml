@@ -4,6 +4,9 @@ name: Release binaries
 # release. release-plz.yml calls it after a release; run it by hand to
 # (re)upload the files for an existing tag. Replace <app> with the package
 # prefix.
+#
+# Each file is signed with the organization's minisign key (`sign: true`), which
+# needs its secrets: release-plz.yml calls this with `secrets: inherit` too.
 on:
   workflow_call:
     inputs:
@@ -30,18 +33,22 @@ jobs:
     permissions:
       contents: write
     uses: sapphire-turtle/.github/.github/workflows/release-binary.yml@v1
+    secrets: inherit
     with:
       tag: ${{ inputs.tag }}
       package: <app>
       binary: <app>
+      sign: true
 
   desktop:
     if: inputs.target == 'desktop'
     permissions:
       contents: write
     uses: sapphire-turtle/.github/.github/workflows/release-binary.yml@v1
+    secrets: inherit
     with:
       tag: ${{ inputs.tag }}
       package: <app>-desktop
       binary: <app>-desktop
       linux-packages: libwayland-dev libxkbcommon-dev
+      sign: true
