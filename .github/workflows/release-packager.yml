@@ -4,7 +4,7 @@ name: Release package
 # package with minisign, and attaches the packages and the app's update feed to an existing
 # GitHub release (sapphire-turtle/corundum-framework#103):
 #
-# - Linux: `<package>_<version>_x86_64.AppImage`
+# - Linux: `<package>_<version>_<arch>.AppImage`, for x86_64 and (`linux-arm64`) aarch64
 # - macOS: `<package>_<version>_<arch>.dmg` to install, and `<package>_<version>_<arch>.app.tar.gz`
 #   for updates; the `.app` is signed and notarized when the caller passes the Apple secrets
 # - Windows: `<package>_<version>_x64-setup.exe`, an NSIS installer for the current user
@@ -66,6 +66,10 @@ on:
         description: 'Extra apt packages to install on Linux, space separated. protoc, the Wayland and xkbcommon headers and libfuse2 are always installed.'
         type: string
         default: ''
+      linux-arm64:
+        description: 'Packages for aarch64 Linux too, on an arm64 runner.'
+        type: boolean
+        default: true
       macos-universal:
         description: 'Builds the macOS binary for both aarch64 and x86_64 and packages them as one.'
         type: boolean
@@ -108,21 +112,35 @@ defaults:
     shell: bash
 
 jobs:
+  # The runners to package on, with aarch64 Linux only when asked for: a matrix's `include`
+  # cannot be left out by an input.
+  matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - id: matrix
+        env:
+          LINUX_ARM64: ${{ inputs.linux-arm64 }}
+        run: |
+          # The oldest runners, so the AppImage runs on older glibc too.
+          matrix=$(jq -cn --argjson arm64 "$LINUX_ARM64" '
+            def linux($arch; $os): {name: "linux-\($arch)", os: $os, "package-os": "linux", formats: "appimage"};
+            {include: (
+              [linux("x86_64"; "ubuntu-22.04")]
+              + (if $arm64 then [linux("aarch64"; "ubuntu-22.04-arm")] else [] end)
+              + [{name: "macos", os: "macos-latest", "package-os": "macos", formats: "app,dmg"},
+                 {name: "windows", os: "windows-latest", "package-os": "windows", formats: "nsis"}]
+            )}')
+          echo "$matrix" | jq .
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
   package:
+    needs: matrix
+    name: package (${{ matrix.name }})
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          # The oldest runner, so the AppImage runs on older glibc too.
-          - os: ubuntu-22.04
-            package-os: linux
-            formats: appimage
-          - os: macos-latest
-            package-os: macos
-            formats: app,dmg
-          - os: windows-latest
-            package-os: windows
-            formats: nsis
+      matrix: ${{ fromJSON(needs.matrix.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
@@ -241,7 +259,8 @@ jobs:
             case $RUNNER_OS in
               macOS) echo "ARCH=aarch64" >> "$GITHUB_ENV" ;;
               Windows) echo "ARCH=x64" >> "$GITHUB_ENV" ;;
-              *) echo "ARCH=x86_64" >> "$GITHUB_ENV" ;;
+              # x86_64 or aarch64, as cargo-packager names the Linux packages.
+              *) echo "ARCH=$(uname -m)" >> "$GITHUB_ENV" ;;
             esac
           fi
           # The shim under the command's name, beside the GUI executable.
@@ -340,7 +359,7 @@ jobs:
           case $RUNNER_OS in
             Linux)
               move "$(ls ./*.AppImage | head -n 1)" "$base.AppImage"
-              entry linux-x86_64 "$base.AppImage" appimage > "$out/feed-part.json"
+              entry "linux-$ARCH" "$base.AppImage" appimage > "$out/feed-part.json"
               ;;
             macOS)
               move "$(ls ./*.app.tar.gz | head -n 1)" "$base.app.tar.gz"
@@ -372,7 +391,7 @@ jobs:
       # Kept with the run too, should the upload below fail; the feed job reads the parts.
       - uses: actions/upload-artifact@v7
         with:
-          name: packager-${{ inputs.app-name }}-${{ matrix.package-os }}
+          name: packager-${{ inputs.app-name }}-${{ matrix.name }}
           path: ${{ env.OUT }}
 
       # Not --clobber: the names carry the package and the version, so a name that is already
