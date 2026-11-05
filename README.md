@@ -19,7 +19,7 @@ Call them as `sapphire-turtle/.github/.github/workflows/<file>@v1`.
 |---|---|
 | [`rust-ci.yml`](.github/workflows/rust-ci.yml) | Pull request CI: `fmt`, then clippy and the tests on Linux x86_64 (`test`) and on Linux aarch64, macOS and Windows (`test-platforms`) |
 | [`release-plz.yml`](.github/workflows/release-plz.yml) | release-plz `release` and `release-pr`, with `RELEASE_PLZ_TOKEN`; outputs which packages were released and their tags |
-| [`release-binary.yml`](.github/workflows/release-binary.yml) | Builds one binary for the four release platforms and attaches `<asset>-<os>-<arch>[.exe]` to a release |
+| [`release-binary.yml`](.github/workflows/release-binary.yml) | Builds one binary for the four release platforms and attaches `<asset>-<os>-<arch>[.exe]` to a release; with `sign`, each with its minisign signature `<file>.sig` |
 | [`release-packager.yml`](.github/workflows/release-packager.yml) | Packages one desktop app with cargo-packager for Linux (AppImage), macOS (signed and notarized `.app`, a DMG) and Windows (NSIS, per user), signs every package with minisign, and attaches them and the app's update feed `<app-name>-latest.json` to a release |
 | [`release-velopack.yml`](.github/workflows/release-velopack.yml) | Deprecated by `release-packager.yml` (corundum-framework#103), kept for v1's callers: packs one desktop app as a Velopack package for Linux, macOS (signed and notarized with the repository's secrets) and Windows and attaches its installers and update files to a release; `channel-prefix` lets one release carry several apps |
 | [`cargo-deny.yml`](.github/workflows/cargo-deny.yml) | `cargo deny check` against the repository's `deny.toml` |

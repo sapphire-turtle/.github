@@ -5,6 +5,12 @@ name: Release binary
 #
 #   linux-x86_64, linux-aarch64, macos-aarch64, windows-x86_64.exe
 #
+# With `sign: true`, each file also gets its minisign signature, `<file>.sig`, made with
+# `cargo packager signer sign` and the organization's key (the secrets
+# PACKAGER_SIGN_PRIVATE_KEY and PACKAGER_SIGN_PRIVATE_KEY_PASSWORD, as release-packager.yml
+# reads them; pass `secrets: inherit`). corundum-framework-update checks it before it installs
+# the file, when the app names the public key (`ReleaseSource::pubkey`).
+#
 # Those names are a contract: `sapphire-framework-update` (the `update` command),
 # sapphire-framework's install/install.sh and install.ps1, and each crate's
 # `[package.metadata.binstall]` look for them, so do not change them here alone.
@@ -43,6 +49,19 @@ on:
         description: 'A bash script run after the build, with the built file in $BIN; fail it to keep a broken binary off the release.'
         type: string
         default: ''
+      sign:
+        description: 'Sign each file with minisign and attach the signature as `<file>.sig`. Needs the PACKAGER_SIGN_PRIVATE_KEY secrets.'
+        type: boolean
+        default: false
+      packager-version:
+        description: 'The cargo-packager version that signs, with `sign`.'
+        type: string
+        default: '0.11.8'
+    secrets:
+      PACKAGER_SIGN_PRIVATE_KEY:
+        required: false
+      PACKAGER_SIGN_PRIVATE_KEY_PASSWORD:
+        required: false
 
 defaults:
   run:
@@ -127,9 +146,34 @@ jobs:
           name="$BASE-${{ matrix.platform }}${{ matrix.exe }}"
           cp "$BIN" "$name"
           echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "files=$name" >> "$GITHUB_OUTPUT"
+
+      - uses: cargo-bins/cargo-binstall@main
+        if: inputs.sign
+      - name: Install cargo-packager
+        if: inputs.sign
+        run: cargo binstall -y "cargo-packager@${{ inputs.packager-version }}"
+
+      # The signature's trusted comment names the file (`file:<name>`), and the updater
+      # checks that, so sign it under the name it is released as.
+      - name: Sign the release file
+        id: signed
+        if: inputs.sign
+        env:
+          NAME: ${{ steps.asset.outputs.name }}
+          CARGO_PACKAGER_SIGN_PRIVATE_KEY: ${{ secrets.PACKAGER_SIGN_PRIVATE_KEY }}
+          CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD: ${{ secrets.PACKAGER_SIGN_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if [ -z "$CARGO_PACKAGER_SIGN_PRIVATE_KEY" ]; then
+            echo "::error::No PACKAGER_SIGN_PRIVATE_KEY secret: pass secrets: inherit, or leave sign off"
+            exit 1
+          fi
+          cargo packager signer sign "$NAME"
+          test -s "$NAME.sig"
+          echo "files=$NAME,$NAME.sig" >> "$GITHUB_OUTPUT"
 
       - name: Upload to release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ inputs.tag }}
-          files: ${{ steps.asset.outputs.name }}
+          files: ${{ inputs.sign && steps.signed.outputs.files || steps.asset.outputs.files }}
