@@ -17,28 +17,30 @@ includes the CLI, the app server and the MCP server, keeps itself up to date, an
 
 ```sh
 # Linux, macOS
-curl -fsSL https://raw.githubusercontent.com/sapphire-turtle/sapphire-framework/main/install/install.sh | sh -s -- <app>
+curl -fsSL https://raw.githubusercontent.com/sapphire-turtle/sapphire-<app>/main/install/install.sh | sh
 ```
 
 ```powershell
 # Windows
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/sapphire-turtle/sapphire-framework/main/install/install.ps1))) <app>
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/sapphire-turtle/sapphire-<app>/main/install/install.ps1)))
 ```
 
-This installs `sapphire-<app>` together with `sapphire-bridge`, which it syncs through, into
-`~/.local/bin`. See the
-[install script's README](https://github.com/sapphire-turtle/sapphire-framework/tree/main/install)
-for the options.
+This installs `sapphire-<app>` into `~/.local/bin`, after checking the download against its
+SHA-256 and, when [minisign](https://jedisct1.github.io/minisign/) is on `PATH`, its signature.
+It does not install `sapphire-bridge`, which the app syncs through: on a host that syncs,
+install it with
+[sapphire-framework's script](https://github.com/sapphire-turtle/sapphire-framework/tree/main/install)
+as well. The options are the same as that script's.
 
 Or, with [cargo-binstall](https://github.com/cargo-bins/cargo-binstall), which downloads the
 same release files:
 
 ```sh
-cargo binstall sapphire-<app> sapphire-bridge
+cargo binstall sapphire-<app>-headless sapphire-bridge-headless
 ```
 
 ### From source
 
 ```sh
-cargo install sapphire-<app> sapphire-bridge
+cargo install sapphire-<app>-headless sapphire-bridge-headless
 ```
