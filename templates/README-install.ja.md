@@ -16,26 +16,28 @@
 
 ```sh
 # Linux, macOS
-curl -fsSL https://raw.githubusercontent.com/sapphire-turtle/sapphire-framework/main/install/install.sh | sh -s -- <app>
+curl -fsSL https://raw.githubusercontent.com/sapphire-turtle/sapphire-<app>/main/install/install.sh | sh
 ```
 
 ```powershell
 # Windows
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/sapphire-turtle/sapphire-framework/main/install/install.ps1))) <app>
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/sapphire-turtle/sapphire-<app>/main/install/install.ps1)))
 ```
 
-`sapphire-<app>` と、同期に使う `sapphire-bridge` が `~/.local/bin` に入ります。オプションは
-[インストールスクリプトの README](https://github.com/sapphire-turtle/sapphire-framework/tree/main/install)
-を見てください。
+`sapphire-<app>` を `~/.local/bin` にインストールします。ダウンロードしたファイルは、SHA-256 と、
+[minisign](https://jedisct1.github.io/minisign/) が `PATH` にあれば署名も確認してから入れます。
+同期に使う `sapphire-bridge` は入らないので、同期するホストでは
+[sapphire-framework のスクリプト](https://github.com/sapphire-turtle/sapphire-framework/tree/main/install/README.ja.md)で
+あわせて入れてください。オプションはそちらと同じです。
 
 [cargo-binstall](https://github.com/cargo-bins/cargo-binstall) でも、同じリリースのファイルを入れられます。
 
 ```sh
-cargo binstall sapphire-<app> sapphire-bridge
+cargo binstall sapphire-<app>-headless sapphire-bridge-headless
 ```
 
 ### ソースから
 
 ```sh
-cargo install sapphire-<app> sapphire-bridge
+cargo install sapphire-<app>-headless sapphire-bridge-headless
 ```

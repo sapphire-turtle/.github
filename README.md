@@ -56,10 +56,12 @@ git push origin v1.2.0 && git push -f origin v1
   (`-core`, `-api`, `-mcp`) keep their own semver and make no tags.
 - **Release files**: `<binary>-linux-x86_64`, `-linux-aarch64`, `-macos-aarch64`,
   `-windows-x86_64.exe`. This is a contract with `sapphire-framework-update` (the `update`
-  command), sapphire-framework's `install/install.sh` and `install.ps1`, and
+  command), each repository's `install/install.sh` and `install.ps1`, and
   `cargo binstall`: change it only as a new major of `release-binary.yml`, together with them.
-- **Distribution**: the CLI (headless use) is installed with the install scripts or
-  `cargo binstall`; the desktop app ships as a cargo-packager package
+- **Distribution**: the CLI (headless use) is installed with the repository's install
+  scripts ([`templates/install/`](templates/install/): they install the latest release after
+  checking its SHA-256 and, with minisign, its signature by the organization's key; the
+  bridge has its own, in sapphire-framework) or `cargo binstall`; the desktop app ships as a cargo-packager package
   (sapphire-turtle/corundum-framework#103, `release-packager.yml`): an AppImage, a DMG and
   an NSIS installer, each signed with the organization's minisign key
   (`PACKAGER_SIGN_PRIVATE_KEY`), whose public key the app builds in
@@ -101,6 +103,7 @@ Add the workflows from **Actions → New workflow** (or copy them from
 | `rust-toolchain.toml` | As is |
 | `deny.toml` | Add the repository's own `ignore` and `exceptions` entries, including the desktop app's GPL one |
 | `.gitignore` | Append repository-specific entries below the marker |
+| `install/install.sh`, `install/install.ps1`, `.github/workflows/install.yml` | From [`templates/install/`](templates/install/): replace `<app>` and the paragraph that says so; below the tables the scripts stay the same in every repository, so a change goes here first |
 
 Then create the `main` ruleset (no deletion, no force push, pull request required, the
 required checks above).
