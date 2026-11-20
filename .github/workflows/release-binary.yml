@@ -53,6 +53,10 @@ on:
         description: 'Sign each file with minisign and attach the signature as `<file>.sig`. Needs the PACKAGER_SIGN_PRIVATE_KEY secrets.'
         type: boolean
         default: false
+      max-glibc:
+        description: 'The newest glibc symbol version a Linux binary may need; the build fails past it. Raise it only with the Linux runners.'
+        type: string
+        default: '2.39'
       packager-version:
         description: 'The cargo-packager version that signs, with `sign`.'
         type: string
@@ -76,7 +80,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          # Pinned, not ubuntu-latest: a Linux binary needs the glibc of the
+          # runner that links it or newer, so moving to a newer Ubuntu stops the
+          # binaries starting on older distributions (ubuntu-26.04's glibc 2.43
+          # did that to Debian 13's 2.41). Move both with max-glibc.
+          - os: ubuntu-24.04
             platform: linux-x86_64
             exe: ''
             continue-on-error: false
@@ -129,6 +137,26 @@ jobs:
 
       - name: Build
         run: cargo build --release --locked --package "${{ inputs.package }}" --bin "${{ inputs.binary }}"
+
+      # A glibc symbol version newer than max-glibc means the binary will not
+      # start where that glibc is older, whatever the source changed.
+      - name: Check the glibc it needs (Linux)
+        if: runner.os == 'Linux'
+        env:
+          BIN: target/release/${{ inputs.binary }}${{ matrix.exe }}
+          MAX: ${{ inputs.max-glibc }}
+        run: |
+          newest=$(objdump -T "$BIN" | grep -oE 'GLIBC_[0-9]+(\.[0-9]+)+' | sed 's/^GLIBC_//' | sort -uV | tail -n1)
+          if [ -z "$newest" ]; then
+            echo "::error::found no glibc symbol versions in $BIN"
+            exit 1
+          fi
+          echo "Needs glibc $newest (at most $MAX allowed)"
+          if [ "$(printf '%s\n%s\n' "$newest" "$MAX" | sort -V | tail -n1)" != "$MAX" ]; then
+            echo "::error::$BIN needs glibc $newest, newer than max-glibc $MAX:"
+            objdump -T "$BIN" | grep -E "GLIBC_$newest\b" | awk '{print "  " $NF}'
+            exit 1
+          fi
 
       - name: Post-build
         if: inputs.post-build != ''
