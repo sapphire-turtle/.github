@@ -82,7 +82,9 @@ jobs:
         run: cargo $TOOLCHAIN fmt --all -- --check
 
   test:
-    runs-on: ubuntu-latest
+    # Pinned to release-binary.yml's linux-x86_64 runner, so the tests run where
+    # the release links; ubuntu-latest moves on its own. Move the two together.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
 

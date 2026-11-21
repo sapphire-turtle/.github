@@ -83,7 +83,8 @@ jobs:
           # Pinned, not ubuntu-latest: a Linux binary needs the glibc of the
           # runner that links it or newer, so moving to a newer Ubuntu stops the
           # binaries starting on older distributions (ubuntu-26.04's glibc 2.43
-          # did that to Debian 13's 2.41). Move both with max-glibc.
+          # did that to Debian 13's 2.41). Move it with max-glibc and with
+          # rust-ci.yml's test job, which runs on the same image.
           - os: ubuntu-24.04
             platform: linux-x86_64
             exe: ''
